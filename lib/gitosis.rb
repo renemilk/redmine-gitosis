@@ -4,11 +4,12 @@ require 'net/ssh'
 
 module Gitosis
   # server config
-  GITOSIS_URI = 'git@your-server.com:/gitosis-admin.git'
-  GITOSIS_BASE_PATH = '/opt/gitosis/repositories/'
+  #GITOSIS_URI = 'git@dune-project.uni-muenster.de:gitosis-admin.git'
+  GITOSIS_URI = 'local_git:gitosis-admin.git'
+  GITOSIS_BASE_PATH = '/home/git/repositories/'
   
   # commands
-  ENV['GIT_SSH'] = SSH_WITH_IDENTITY_FILE = File.join(RAILS_ROOT, 'vendor/plugins/redmine_gitosis/extra/ssh_with_identity_file.sh')
+  #ENV['GIT_SSH'] = SSH_WITH_IDENTITY_FILE = File.join(RAILS_ROOT, 'vendor/plugins/redmine_gitosis/extra/ssh_with_identity_file.sh')
   
   def self.destroy_repository(project)
     path = File.join(GITOSIS_BASE_PATH, "#{project.identifier}.git")
@@ -53,7 +54,24 @@ module Gitosis
         original = conf.clone
         name = "#{project.identifier}"
     
-        conf["group #{name}"]['writable'] = name
+	write_users.each do |wuser|
+		u_keys = wuser.gitosis_public_keys.active.flatten.map{ |key| "#{key.identifier}" }.join(' ')
+		g_name = "#{wuser.login}_#{name}"
+		conf[g_name]['writable'] = "#{g_name}/#{name}"
+		conf[g_name]['members'] = u_keys
+		if project.is_public
+		        conf[g_name]['daemon'] = "yes"
+		else
+        		conf[g_name]['daemon'] = "no"
+		end
+	end
+	
+	if project.is_public
+	        conf["group #{name}"]['daemon'] = "yes"
+	else
+        	conf["group #{name}"]['daemon'] = "no"
+	end
+        conf["group #{name}"]['writable'] = "projects/#{name}"
         conf["group #{name}"]['members'] = write_users.map{|u| u.gitosis_public_keys.active}.flatten.map{ |key| "#{key.identifier}" }.join(' ')
         unless conf.eql?(original)
           conf.write 
@@ -65,7 +83,7 @@ module Gitosis
         # add, commit, push, and remove local tmp dir
         `cd #{File.join(local_dir,'gitosis')} ; git add keydir/* gitosis.conf`
         `cd #{File.join(local_dir,'gitosis')} ; git commit -a -m 'updated by Redmine Gitosis'`
-        `cd #{File.join(local_dir,'gitosis')} ; git push`
+        `cd #{File.join(local_dir,'gitosis')} ; git push origin master`
       end
     
       # remove local copy
